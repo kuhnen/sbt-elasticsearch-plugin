@@ -12,7 +12,8 @@ libraryDependencies ++= Seq(
   "org.slf4j" % "slf4j-api" % "1.7.7",
   "org.slf4j" % "jcl-over-slf4j" % "1.7.7",
   "org.yaml" % "snakeyaml" % "1.13",
-  "com.sksamuel.elastic4s" %% "elastic4s" % "1.2.1.2"
+  "org.json4s" %% "json4s-native" % "3.2.10",
+  "com.stackmob" %% "newman" % "1.3.5"
 )
 
 scalacOptions ++= Seq("-deprecation", "-feature", "-unchecked", "-language:postfixOps")
