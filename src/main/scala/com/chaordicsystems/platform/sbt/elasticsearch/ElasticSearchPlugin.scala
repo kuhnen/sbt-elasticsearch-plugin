@@ -24,26 +24,28 @@ object ElasticSearchPlugin extends Plugin {
   lazy val deployElasticSearch = taskKey[File]("Task to download (deploy) elastic search")
   lazy val startElasticSearch =  taskKey[Unit]("Task to start elasticSearch")
   lazy val stopElasticSearch =  taskKey[Unit]("Task to stop elasticSearch")
-  lazy val elasticSearchConfigDir = settingKey[Option[String]]("elastic search config dir")
+  lazy val elasticSearchConfigFile = settingKey[Option[String]]("elastic search config dir")
   lazy val elasticSearchMappings = settingKey[Option[String]]("Use this to set the initial mapping of elastic search")
   lazy val stopElasticSearchAfterTests = settingKey[Boolean]("stop ES after tests")
   lazy val cleanElasticSearchAfterTests = settingKey[Boolean]("clean ES after tests")
+  lazy val elasticSearchFilesToDefaultConfigDir= settingKey[List[String]]("Files to add to the default config directory of ELASTICSEARCH")
 
   implicit val httpClient = new ApacheHttpClient
 
   val elasticSearchSettings = Seq(
     elasticSearchVersion := "1.3.2",
-    elasticSearchConfigDir := None,
+    elasticSearchConfigFile := None,
     elasticSearchMappings := None,
     stopElasticSearchAfterTests := true,
     cleanElasticSearchAfterTests := true,
+    elasticSearchFilesToDefaultConfigDir := List.empty,
     elasticSearchHome <<=  (elasticSearchVersion, target) map { case (ver, targetDir) => targetDir / s"elasticsearch-${ver}"},
     //classpathTypes ~= (_ + "tar.gz"),
     //libraryDependencies += {
     //  "org.elasticsearch" % "elasticsearch" % elasticSearchVersion.value artifacts(Artifact("elasticsearch", "tar.gz", "tar.gz"))
     //},
-    deployElasticSearch <<= (elasticSearchVersion, target, baseDirectory) map {
-      case (ver, targetDir, baseDir) =>
+    deployElasticSearch <<= (elasticSearchVersion, target, baseDirectory, elasticSearchFilesToDefaultConfigDir) map {
+      case (ver, targetDir, baseDir, confFiles) =>
         val esTar = s"elasticsearch-$ver.tar.gz"
         val downloadPathURL = new URL(s"https://download.elasticsearch.org/elasticsearch/elasticsearch/$esTar")
         val esTarFile = file(baseDir.toPath + "/" + esTar)
@@ -52,10 +54,16 @@ object ElasticSearchPlugin extends Plugin {
           sbt.IO.download(downloadPathURL, file(baseDir.toPath + "/" + esTar))
         }
         Process(Seq("tar","-xzf", esTarFile.getAbsolutePath),targetDir).!
+        confFiles.foreach { filePath =>
+          val source: File = file(filePath)
+          val destiny: File = targetDir / s"elasticsearch-${ver}" / "config" / source.getAbsolutePath.split("/").reverse.head
+          println(s"Copying files: $source to $destiny")
+          IO.copyFile(source, destiny)
+        }
         targetDir / s"elasticsearch-${ver}"
     },
 
-    startElasticSearch <<= (target, deployElasticSearch, elasticSearchConfigDir, elasticSearchMappings) map {
+    startElasticSearch <<= (target, deployElasticSearch, elasticSearchConfigFile, elasticSearchMappings) map {
       case (targetDir, elasticHome, configDir, esMappings) =>
         if (!isElasticSearchRunning) {
           val confArg = "-Des.config=" + configDir.getOrElse(elasticHome.getAbsolutePath + "/config/elasticsearch.yml")
