@@ -8,7 +8,7 @@ However, the plugin is already usable as is.
 ## Installation ##
 Add the following to your `project/plugins.sbt` file:
 ```scala
-addSbtPlugin("com.chaordicsystems.platform" % "sbt-elasticsearch-plugin" % "0.1-SNAPSHOT")
+addSbtPlugin("com.github.kuhnen" % "sbt-elasticsearch-plugin" % "0.1-SNAPSHOT")
 ```
 Until i'll get this plugin hosted, you can build it yourself, and use `sbt publish-local` to have it available in your local `~/.ivy2`.
 
