@@ -44,19 +44,20 @@ object ElasticSearchPlugin extends Plugin {
     //libraryDependencies += {
     //  "org.elasticsearch" % "elasticsearch" % elasticSearchVersion.value artifacts(Artifact("elasticsearch", "tar.gz", "tar.gz"))
     //},
-    deployElasticSearch <<= (elasticSearchVersion, target, baseDirectory, elasticSearchFilesToDefaultConfigDir) map {
-      case (ver, targetDir, baseDir, confFiles) =>
+    deployElasticSearch <<= (streams, elasticSearchVersion, target, baseDirectory, elasticSearchFilesToDefaultConfigDir) map {
+      case (streams, ver, targetDir, baseDir, confFiles) =>
         val esTar = s"elasticsearch-$ver.tar.gz"
         val downloadPathURL = new URL(s"https://download.elasticsearch.org/elasticsearch/elasticsearch/$esTar")
-        val esTarFile = file(baseDir.toPath + "/" + esTar)
+        val downloadTo = targetDir / "download"
+        val esTarFile = downloadTo / esTar
         if (!esTarFile.exists()) {
-          println(s"[INFO] Downloading elasticSearch from $downloadPathURL")
-          sbt.IO.download(downloadPathURL, file(baseDir.toPath + "/" + esTar))
+          streams.log.info(s"Downloading elasticSearch from $downloadPathURL")
+          sbt.IO.download(downloadPathURL, esTarFile)
         }
         Process(Seq("tar","-xzf", esTarFile.getAbsolutePath),targetDir).!
         confFiles.foreach { filePath =>
           val source: File = file(filePath)
-          val destiny: File = targetDir / s"elasticsearch-${ver}" / "config" / source.getAbsolutePath.split("/").reverse.head
+          val destiny: File = targetDir / s"elasticsearch-${ver}" / "config" / source.getAbsolutePath.split("/").last
           println(s"Copying files: $source to $destiny")
           IO.copyFile(source, destiny)
         }
