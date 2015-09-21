@@ -1,4 +1,4 @@
-package com.chaordicsystems.platform.sbt.elasticsearch
+package com.github.kuhnen.elasticsearch
 
 import com.stackmob.newman.ApacheHttpClient
 import com.stackmob.newman.response.HttpResponse
@@ -17,7 +17,11 @@ import scala.util.Try
 /**
  * Created by kuhnen on 8/8/14.
  */
-object ElasticSearchPlugin extends Plugin {
+object ElasticSearchPlugin extends AutoPlugin {
+
+  lazy val testWithEs = taskKey[Unit]("starts ES before runing the tests")  // in Test <<= test in Test dependsOn(startElasticSearch)
+
+  lazy val testOnlyWithEs = inputKey[Unit]("starts ES before runing specified test")
 
   lazy val elasticSearchVersion = settingKey[String]("ElasticSearch version")
   lazy val elasticSearchHome = taskKey[File]("Task to create elastic search home directory")
@@ -31,15 +35,19 @@ object ElasticSearchPlugin extends Plugin {
   lazy val elasticSearchFilesToDefaultConfigDir= settingKey[List[String]]("Files to add to the default config directory of ELASTICSEARCH")
 
   implicit val httpClient = new ApacheHttpClient
+  lazy val esPort = settingKey[Int]("Default elastic search port")// 9200
 
   val elasticSearchSettings = Seq(
-    elasticSearchVersion := "1.3.2",
+    elasticSearchVersion := "1.7.1",
+    esPort := 9200, // For now it can not be changed.  We need to find a nice way to get it from the configuration file
     elasticSearchConfigFile := None,
     elasticSearchMappings := None,
     stopElasticSearchAfterTests := true,
     cleanElasticSearchAfterTests := true,
     elasticSearchFilesToDefaultConfigDir := List.empty,
     elasticSearchHome <<=  (elasticSearchVersion, target) map { case (ver, targetDir) => targetDir / s"elasticsearch-${ver}"},
+    testWithEs <<= test in Test dependsOn startElasticSearch,
+    testOnlyWithEs <<= testOnly in Test dependsOn startElasticSearch,
     //classpathTypes ~= (_ + "tar.gz"),
     //libraryDependencies += {
     //  "org.elasticsearch" % "elasticsearch" % elasticSearchVersion.value artifacts(Artifact("elasticsearch", "tar.gz", "tar.gz"))
@@ -64,36 +72,35 @@ object ElasticSearchPlugin extends Plugin {
         targetDir / s"elasticsearch-${ver}"
     },
 
-    startElasticSearch <<= (target, deployElasticSearch, elasticSearchConfigFile, elasticSearchMappings) map {
-      case (targetDir, elasticHome, configDir, esMappings) =>
-        if (!isElasticSearchRunning) {
+    startElasticSearch <<= (streams, target, deployElasticSearch, elasticSearchConfigFile, elasticSearchMappings, esPort) map {
+      case (streams, targetDir, elasticHome, configDir, esMappings, esPort) =>
+        if (!isElasticSearchRunning(esPort)) {
           val confArg = "-Des.config=" + configDir.getOrElse(elasticHome.getAbsolutePath + "/config/elasticsearch.yml")
+          streams.log.info(s"configuration used: $confArg")
           val bin = elasticHome / "bin" / "elasticsearch"
           val args = Seq(bin.getAbsolutePath, confArg)
           val proc = Process(args, elasticHome).run
-          waitElasticSearch
+          waitElasticSearch(esPort)
           esMappings.foreach { scriptPath =>
-            println(s"[INFO] Initializing ES with $scriptPath")
+            streams.log.info(s"Initializing ES with $scriptPath")
             val scriptDir: String = scriptPath.split("/").reverse.tail.reverse.mkString("/")
-            println(s"Script dir: $scriptDir")
+            streams.log.info(s"Script dir: $scriptDir")
             Process(Seq(scriptPath), sbt.file(scriptDir))!
           }
-
         }
-
     },
 
-    testOptions in Test <+= (stopElasticSearchAfterTests, cleanElasticSearchAfterTests) map {
-      case (stop, clean) => Tests.Cleanup(()=> {
+    testOptions in Test <+= (stopElasticSearchAfterTests, cleanElasticSearchAfterTests, esPort) map {
+      case (stop, clean, esPort) => Tests.Cleanup(()=> {
 
           Try {
             if (stop && clean) {
-              val url =  new URL("http://localhost:9200/_all")
+              val url =  new URL(s"http://localhost:$esPort/_all")
               println("[INFO] Deleting all indexes")
               Await.result(DELETE(url).apply, 1.second)
             }
             if (stop) {
-              val url = new URL("http://localhost:9200/_shutdown")
+              val url = new URL(s"http://localhost:$esPort/_shutdown")
               Await.result(POST(url).apply, 1.second)
             }
           }
@@ -102,14 +109,14 @@ object ElasticSearchPlugin extends Plugin {
       )
     },
 
-      stopElasticSearch <<= (cleanElasticSearchAfterTests) map {
-        case clean => //Try {
+      stopElasticSearch <<= (cleanElasticSearchAfterTests, esPort) map {
+        case (clean, esPort) => //Try {
           if (clean) {
-            val url =  new URL("http://localhost:9200/_all")
+            val url =  new URL(s"http://localhost:$esPort/_all")
             println("[INFO] Deleting all indexes")
             Await.result(DELETE(url).apply, 1.second)
           }
-          val url = new URL("http://localhost:9200/_shutdown")
+          val url = new URL(s"http://localhost:$esPort/_shutdown")
           Await.result(POST(url).apply, 1.second)
       //  }
       }
@@ -117,20 +124,27 @@ object ElasticSearchPlugin extends Plugin {
   )
 
 
-  def waitElasticSearch = {
-    while(!isElasticSearchRunning){
-      println("[[INFO] Waiting for elastic search to be ready")
+  def waitElasticSearch(port: Int) = {
+    //var port = 9200
+    var tries = 0
+    while(!isElasticSearchRunning(port)){// && tries <= 3){
+      tries += 1
+      println(s"[[INFO] Waiting for elastic search to be ready. Tried $tries time(s) on port $port")
       Thread.sleep(3000)
+    //  if (tries == 3) {
+    //    tries = 0
+    //    port += 1
+      }
     }
-  }
+  //}
 
-  def isElasticSearchRunning: Boolean = {
+  def isElasticSearchRunning(port: Int) : Boolean = {
     import org.json4s._
     import org.json4s.native.JsonMethods._
     implicit val formats = org.json4s.DefaultFormats
 
     Try {
-      val url = new URL("http://localhost:9200/_cluster/health?pretty=true")
+      val url = new URL(s"http://localhost:$port/_cluster/health?pretty=true")
       val response: HttpResponse = Await.result(GET(url).apply, 1.second)
       println(s"[INFO] ${response.bodyString}")
       val status = (parse(response.bodyString) \\ "status").extract[String]

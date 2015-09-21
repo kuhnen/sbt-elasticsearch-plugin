@@ -1,6 +1,6 @@
 sbtPlugin := true
 
-organization := "com.chaordicsystems.platform"
+organization := "com.github.kuhnen"
 
 name := "sbt-elasticsearch-plugin"
 
