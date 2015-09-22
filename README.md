@@ -12,6 +12,16 @@ addSbtPlugin("com.github.kuhnen" % "sbt-elasticsearch-plugin" % "0.1-SNAPSHOT")
 ```
 
 ## Usage ##
+
+to start a new elasticsearch before running your tests
+```
+testWithEs
+```
+to start a new elasticsearch before running your testOnly
+```
+testOnlyWithEs
+```
+
 ### On build.sbt file you can change some configurations ###
  
  ElasticSearchPlugin.elasticSearchVersion := "1.7.1", (override the default ES version)
